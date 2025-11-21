@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Championnat AMR33 Mini-Z</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    
+    <!-- Firebase SDK v9 -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyCgx4H5LqCmTBJbXW1QgAsBcJhI0DFK3Mo",
+            authDomain: "championnat-mini-z-amr33.firebaseapp.com",
+            databaseURL: "https://championnat-mini-z-amr33-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "championnat-mini-z-amr33",
+            storageBucket: "championnat-mini-z-amr33.firebasestorage.app",
+            messagingSenderId: "1083602808736",
+            appId: "1:1083602808736:web:723257bd6fe850e2bd3ec5"
+        };
+        
+        const firebaseApp = initializeApp(firebaseConfig);
+        const database = getDatabase(firebaseApp);
+        
+        window.firebaseDB = {
+            ref: (path) => ref(database, path),
+            onValue: onValue,
+            set: set
+        };
+        
+        console.log('✅ Firebase initialisé');
+        
+        // Démarrer l'application une fois Firebase prêt
+        if (window.app) {
+            window.app.initFirebase();
+        }
+    </script>
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #1e3a8a 50%, #1e293b 100%);
+            min-height: 100vh;
+        }
+        .sync-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            z-index: 1000;
+            transition: all 0.3s;
+        }
+        .sync-online {
+            background: linear-gradient(135deg, #10b981, #059669);
+            animation: pulse 2s infinite;
+        }
+        .sync-saving {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(0.98); }
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body class="text-white p-4">
+    <div id="loading" class="loading-overlay">
+        <div class="text-center">
+            <div class="text-6xl mb-4 animate-bounce">🏎️</div>
+            <div class="text-2xl font-bold mb-2">Connexion à Firebase...</div>
+            <div class="text-slate-400">Synchronisation en cours</div>
+        </div>
+    </div>
+    
+    <div id="app" style="display:none;"></div>
+    <div id="syncIndicator" class="sync-indicator sync-online" style="display:none;">
+        🔄 Synchronisé
+    </div>
+    
+    <script>
+        const app = {
+            pilots: [],
+            results: {},
+            roundNames: {},
+            bestLaps: {},
+            isAdmin: false,
+            withBonus: false,
+            currentRound: 1,
+            currentFinal: 1,
+            activeTab: 'pilots',
+            firebaseReady: false,
+            isUpdating: false,
+            
+            initFirebase() {
+                this.firebaseReady = true;
+                console.log('📡 Connexion Firebase...');
+                
+                // Écouter les changements en temps réel
+                window.firebaseDB.onValue(window.firebaseDB.ref('championship'), (snapshot) => {
+                    const data = snapshot.val() || {};
+                    
+                    // Ne pas écraser si c'est nous qui mettons à jour
+                    if (!this.isUpdating) {
+                        this.pilots = data.pilots || [];
+                        this.results = data.results || {};
+                        this.roundNames = data.roundNames || {};
+                        this.bestLaps = data.bestLaps || {};
+                        this.withBonus = data.withBonus || false;
+                        
+                        console.log('📥 Données reçues de Firebase');
+                        this.showSyncIndicator('🔄 Synchronisé', 'sync-online');
+                    }
+                    
+                    // Masquer le loading et afficher l'app
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('app').style.display = 'block';
+                    document.getElementById('syncIndicator').style.display = 'block';
+                    
+                    this.render();
+                });
+            },
+            
+            showSyncIndicator(text, className) {
+                const indicator = document.getElementById('syncIndicator');
+                if (indicator) {
+                    indicator.textContent = text;
+                    indicator.className = `sync-indicator ${className}`;
+                }
+            },
+            
+            saveToFirebase() {
+                if (!this.firebaseReady) {
+                    alert('❌ Firebase non connecté');
+                    return;
+                }
+                
+                this.isUpdating = true;
+                this.showSyncIndicator('💾 Sauvegarde...', 'sync-saving');
+                
+                const data = {
+                    pilots: this.pilots,
+                    results: this.results,
+                    roundNames: this.roundNames,
+                    bestLaps: this.bestLaps,
+                    withBonus: this.withBonus,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                window.firebaseDB.set(window.firebaseDB.ref('championship'), data)
+                    .then(() => {
+                        console.log('✅ Sauvegardé sur Firebase');
+                        this.showSyncIndicator('✅ Sauvegardé !', 'sync-online');
+                        setTimeout(() => {
+                            this.showSyncIndicator('🔄 Synchronisé', 'sync-online');
+                            this.isUpdating = false;
+                        }, 2000);
+                    })
+                    .catch((error) => {
+                        console.error('❌ Erreur Firebase:', error);
+                        alert('❌ Erreur de synchronisation : ' + error.message);
+                        this.isUpdating = false;
+                    });
+            },
+            
+            checkPassword() {
+                const pwd = prompt('Mot de passe administrateur:');
+                if (pwd === 'amr33') {
+                    this.isAdmin = true;
+                    alert('✅ Mode admin activé pour cette session');
+                    this.render();
+                } else if (pwd) {
+                    alert('❌ Mot de passe incorrect');
+                }
+            },
+            
+            addPilot() {
+                const name = document.getElementById('newPilot').value.trim();
+                if (name) {
+                    this.pilots.push({id: Date.now(), name: name});
+                    document.getElementById('newPilot').value = '';
+                    this.saveToFirebase();
+                }
+            },
+            
+            deletePilot(id) {
+                if (confirm('Supprimer ce pilote et tous ses résultats ?')) {
+                    this.pilots = this.pilots.filter(p => p.id !== id);
+                    this.saveToFirebase();
+                }
+            },
+            
+            getRoundName(r) {
+                return this.roundNames[r] || `Manche ${r}`;
+            },
+            
+            setRoundName(r) {
+                const name = prompt(`Nom de la manche ${r}:`, this.getRoundName(r));
+                if (name) {
+                    this.roundNames[r] = name;
+                    this.saveToFirebase();
+                }
+            },
+            
+            updateResult(r, f, pilotId, field, value) {
+                const key = `${r}-${f}`;
+                if (!this.results[key]) this.results[key] = {};
+                if (!this.results[key][pilotId]) this.results[key][pilotId] = {};
+                this.results[key][pilotId][field] = value;
+                this.saveToFirebase();
+            },
+            
+            updateBestLap(r, pilotId, value) {
+                if (!this.bestLaps[r]) this.bestLaps[r] = {};
+                this.bestLaps[r][pilotId] = value;
+                this.saveToFirebase();
+            },
+            
+            toggleBonus() {
+                this.withBonus = !this.withBonus;
+                this.saveToFirebase();
+            },
+            
+            calculateFinal(r, f) {
+                const key = `${r}-${f}`;
+                const res = this.results[key] || {};
+                const data = this.pilots.map(p => {
+                    const pr = res[p.id] || {};
+                    return {
+                        id: p.id,
+                        name: p.name,
+                        laps: parseInt(pr.laps) || 0,
+                        time: pr.time || '',
+                        timeVal: this.parseTime(pr.time)
+                    };
+                }).filter(p => p.laps > 0 || p.time);
+                
+                data.sort((a, b) => {
+                    if (b.laps !== a.laps) return b.laps - a.laps;
+                    return a.timeVal - b.timeVal;
+                });
+                
+                const points = [25,22,20,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1];
+                return data.map((p, i) => ({
+                    ...p,
+                    rank: i + 1,
+                    points: (points[i] || 0) + (this.withBonus ? 3 : 0)
+                }));
+            },
+            
+            parseTime(t) {
+                if (!t) return 999999;
+                const parts = t.split(':');
+                if (parts.length !== 2) return 999999;
+                return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+            },
+            
+            calculateRound(r) {
+                const scores = {};
+                this.pilots.forEach(p => {
+                    const finals = [];
+                    for (let f = 1; f <= 3; f++) {
+                        const ranking = this.calculateFinal(r, f);
+                        const pr = ranking.find(x => x.id === p.id);
+                        if (pr) finals.push({f, pts: pr.points, laps: pr.laps, time: pr.timeVal});
+                    }
+                    finals.sort((a, b) => b.pts - a.pts);
+                    const best2 = finals.slice(0, 2);
+                    scores[p.id] = {
+                        name: p.name,
+                        best2: best2.map(x => x.f),
+                        pts: best2.reduce((s, x) => s + x.pts, 0),
+                        laps: best2.reduce((s, x) => s + x.laps, 0),
+                        time: best2.reduce((s, x) => s + x.time, 0)
+                    };
+                });
+                return scores;
+            },
+            
+            calculateChampionship(maxR = 12) {
+                const totals = {};
+                this.pilots.forEach(p => {
+                    const rounds = [];
+                    for (let r = 1; r <= maxR; r++) {
+                        const rd = this.calculateRound(r);
+                        if (rd[p.id] && rd[p.id].pts > 0) {
+                            rounds.push({r, pts: rd[p.id].pts, laps: rd[p.id].laps, time: rd[p.id].time});
+                        }
+                    }
+                    rounds.sort((a, b) => b.pts - a.pts);
+                    const best10 = rounds.slice(0, 10);
+                    totals[p.id] = {
+                        name: p.name,
+                        best10: best10.map(x => x.r),
+                        pts: best10.reduce((s, x) => s + x.pts, 0),
+                        laps: best10.reduce((s, x) => s + x.laps, 0),
+                        time: best10.reduce((s, x) => s + x.time, 0)
+                    };
+                });
+                const arr = Object.values(totals);
+                arr.sort((a, b) => {
+                    if (b.pts !== a.pts) return b.pts - a.pts;
+                    if (b.laps !== a.laps) return b.laps - a.laps;
+                    return a.time - b.time;
+                });
+                return arr;
+            },
+            
+            formatTime(s) {
+                if (s >= 999999) return '-';
+                const m = Math.floor(s / 60);
+                const sec = (s % 60).toFixed(2);
+                return `${m}:${sec.padStart(5, '0')}`;
+            },
+            
+            exportData() {
+                const data = {
+                    pilots: this.pilots,
+                    results: this.results,
+                    roundNames: this.roundNames,
+                    bestLaps: this.bestLaps
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `championnat-amr33-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            },
+            
+            render() {
+                const isAdmin = this.isAdmin;
+                
+                document.getElementById('app').innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="bg-slate-800/50 rounded-lg p-6 mb-6 border border-blue-500/30">
+                            <div class="flex justify-between items-center flex-wrap gap-4">
+                                <div>
+                                    <h1 class="text-3xl font-bold">🏆 Championnat AMR33 Mini-Z</h1>
+                                    <p class="text-sm">
+                                        ${isAdmin ? '<span class="text-green-400">🔓 Mode Admin</span>' : '<span class="text-slate-400">👁️ Lecture seule</span>'}
+                                        • <span class="text-green-400">🔄 Sync temps réel activée</span>
+                                    </p>
+                                </div>
+                                <div class="flex gap-2 flex-wrap">
+                                    ${!isAdmin ? '<button onclick="app.checkPassword()" class="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">🔐 Admin</button>' : ''}
+                                    <label class="flex items-center gap-2 bg-blue-600 px-4 py-2 rounded cursor-pointer hover:bg-blue-700">
+                                        <input type="checkbox" ${this.withBonus ? 'checked' : ''} onchange="app.toggleBonus()">
+                                        Bonus +3
+                                    </label>
+                                    <button onclick="app.exportData()" class="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700">📥 Export</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+                            ${['pilots', 'input', 'final', 'bestlap', 'round', 'evolution', 'championship'].map(tab => `
+                                <button onclick="app.activeTab='${tab}'; app.render();" 
+                                    class="px-4 py-2 rounded font-semibold whitespace-nowrap transition ${this.activeTab === tab ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'}">
+                                    ${tab === 'pilots' ? '👥 Pilotes' : 
+                                      tab === 'input' ? '📝 Saisie' :
+                                      tab === 'final' ? '🏁 Finales' :
+                                      tab === 'bestlap' ? '⚡ Best Lap' :
+                                      tab === 'round' ? '📊 Manches' :
+                                      tab === 'evolution' ? '📈 Évolution' : '🏆 Championnat'}
+                                </button>
+                            `).join('')}
+                        </div>
+                        
+                        <div id="content">${this.renderTab()}</div>
+                    </div>
+                `;
+            },
+            
+            renderTab() {
+                if (this.activeTab === 'pilots') return this.renderPilots();
+                if (this.activeTab === 'input') return this.renderInput();
+                if (this.activeTab === 'final') return this.renderFinals();
+                if (this.activeTab === 'bestlap') return this.renderBestLaps();
+                if (this.activeTab === 'round') return this.renderRounds();
+                if (this.activeTab === 'evolution') return this.renderEvolution();
+                if (this.activeTab === 'championship') return this.renderChampionship();
+            },
+            
+            renderPilots() {
+                const dis = this.isAdmin ? '' : 'disabled';
+                return `
+                    <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                        <h2 class="text-2xl font-bold mb-4">👥 Gestion des pilotes</h2>
+                        <div class="flex gap-2 mb-6">
+                            <input type="text" id="newPilot" placeholder="Nom du pilote" 
+                                class="flex-1 px-4 py-2 bg-slate-700 rounded border border-slate-600 focus:border-blue-500 outline-none" ${dis}
+                                onkeypress="if(event.key==='Enter') app.addPilot()">
+                            <button onclick="app.addPilot()" class="bg-green-600 px-4 py-2 rounded hover:bg-green-700 transition" ${dis}>➕ Ajouter</button>
+                        </div>
+                        ${this.pilots.length === 0 ? '<p class="text-center text-slate-400 py-8">Aucun pilote. Ajoutez-en un pour commencer !</p>' : ''}
+                        <div class="space-y-2">
+                            ${this.pilots.map(p => `
+                                <div class="flex justify-between items-center bg-slate-700/50 p-3 rounded">
+                                    <span class="font-semibold">${p.name}</span>
+                                    <button onclick="app.deletePilot(${p.id})" class="text-red-400 hover:text-red-300 transition" ${dis}>🗑️</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            },
+            
+            renderInput() {
+                const dis = this.isAdmin ? '' : 'disabled';
+                const key = `${this.currentRound}-${this.currentFinal}`;
+                const res = this.results[key] || {};
+                const bl = this.bestLaps[this.currentRound] || {};
+                
+                return `
+                    <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                        <h2 class="text-2xl font-bold mb-4">📝 Saisie des résultats</h2>
+                        <div class="flex gap-4 mb-6 flex-wrap">
+                            <div>
+                                <label class="block text-sm mb-2 font-semibold">Manche</label>
+                                <select onchange="app.currentRound = parseInt(this.value); app.render();" 
+                                    class="px-4 py-2 bg-slate-700 rounded border border-slate-600 outline-none">
+                                    ${[...Array(12)].map((_, i) => `
+                                        <option value="${i+1}" ${this.currentRound === i+1 ? 'selected' : ''}>
+                                            ${this.getRoundName(i+1)}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm mb-2 font-semibold">Finale</label>
+                                <select onchange="app.currentFinal = parseInt(this.value); app.render();" 
+                                    class="px-4 py-2 bg-slate-700 rounded border border-slate-600 outline-none">
+                                    ${[1,2,3].map(f => `
+                                        <option value="${f}" ${this.currentFinal === f ? 'selected' : ''}>Finale ${f}</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        ${this.pilots.length === 0 ? '<p class="text-center text-slate-400 py-8">Ajoutez des pilotes d\'abord !</p>' : `
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-slate-600">
+                                        <th class="text-left p-3">Pilote</th>
+                                        <th class="text-center p-3">Position</th>
+                                        <th class="text-center p-3">Tours</th>
+                                        <th class="text-center p-3">Temps<br><span class="text-xs font-normal">(mm:ss.00)</span></th>
+                                        <th class="text-center p-3">⚡ Best Lap<br><span class="text-xs font-normal">(mm:ss.000)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.pilots.map(p => {
+                                        const pr = res[p.id] || {};
+                                        return `
+                                            <tr class="border-b border-slate-700">
+                                                <td class="p-3 font-semibold">${p.name}</td>
+                                                <td class="p-3">
+                                                    <input type="number" value="${pr.position || ''}" 
+                                                        onchange="app.updateResult(${this.currentRound}, ${this.currentFinal}, ${p.id}, 'position', this.value)"
+                                                        class="w-20 px-2 py-1 bg-slate-700 rounded text-center border border-slate-600" ${dis}>
+                                                </td>
+                                                <td class="p-3">
+                                                    <input type="number" value="${pr.laps || ''}" 
+                                                        onchange="app.updateResult(${this.currentRound}, ${this.currentFinal}, ${p.id}, 'laps', this.value)"
+                                                        class="w-20 px-2 py-1 bg-slate-700 rounded text-center border border-slate-600" ${dis}>
+                                                </td>
+                                                <td class="p-3">
+                                                    <input type="text" value="${pr.time || ''}" placeholder="0:00.00"
+                                                        onchange="app.updateResult(${this.currentRound}, ${this.currentFinal}, ${p.id}, 'time', this.value)"
+                                                        class="w-32 px-2 py-1 bg-slate-700 rounded text-center border border-slate-600" ${dis}>
+                                                </td>
+                                                <td class="p-3">
+                                                    <input type="text" value="${bl[p.id] || ''}" placeholder="0:00.000"
+                                                        onchange="app.updateBestLap(${this.currentRound}, ${p.id}, this.value)"
+                                                        class="w-36 px-2 py-1 bg-yellow-900/30 rounded border border-yellow-600 text-center font-bold" ${dis}>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="mt-4 text-sm text-slate-300">💡 Le Best Lap est unique par manche (toutes finales confondues)</p>
+                        `}
+                    </div>
+                `;
+            },
+            
+            renderFinals() {
+                let html = '<div class="space-y-6">';
+                for (let r = 1; r <= 12; r++) {
+                    html += `
+                        <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                            <h3 class="text-xl font-bold mb-4">${this.getRoundName(r)}</h3>
+                            <div class="grid md:grid-cols-3 gap-4">`;
+                    for (let f = 1; f <= 3; f++) {
+                        const ranking = this.calculateFinal(r, f);
+                        html += `
+                            <div class="bg-slate-700/50 rounded p-4">
+                                <h4 class="font-bold mb-3 text-blue-400">Finale ${f}</h4>
+                                ${ranking.length === 0 ? '<p class="text-sm text-slate-400">Aucun résultat</p>' : `
+                                <div class="space-y-2">
+                                    ${ranking.map(p => `
+                                        <div class="flex justify-between text-sm">
+                                            <span class="font-semibold">${p.rank}. ${p.name}</span>
+                                            <div class="text-right">
+                                                <div class="text-yellow-400 font-bold">${p.points} pts</div>
+                                                <div class="text-xs text-slate-400">${p.laps} tours • ${p.time}</div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                `}
+                            </div>
+                        `;
+                    }
+                    html += '</div></div>';
+                }
+                html += '</div>';
+                return html;
+            },
+            
+            renderBestLaps() {
+                let html = '<div class="space-y-6">';
+                for (let r = 1; r <= 12; r++) {
+                    const bl = this.bestLaps[r] || {};
+                    const data = this.pilots.map(p => ({
+                        name: p.name,
+                        time: bl[p.id] || '',
+                        val: this.parseTime(bl[p.id])
+                    })).filter(p => p.time);
+                    
+                    data.sort((a, b) => a.val - b.val);
+                    
+                    html += `
+                        <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                            <h3 class="text-xl font-bold mb-4">⚡ ${this.getRoundName(r)} - Best Lap</h3>
+                            ${data.length === 0 ? '<p class="text-center text-slate-400">Aucun best lap</p>' : `
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b border-slate-600">
+                                            <th class="text-left p-3">Pos</th>
+                                            <th class="text-left p-3">Pilote</th>
+                                            <th class="text-center p-3">Temps</th>
+                                            <th class="text-center p-3">Écart</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${data.map((p, i) => {
+                                            const gap = i === 0 ? '-' : `+${(p.val - data[0].val).toFixed(3)}s`;
+                                            const medal = ['🥇', '🥈', '🥉'][i] || '';
+                                            return `
+                                                <tr class="border-b border-slate-700 ${i < 3 ? 'bg-yellow-500/10' : ''}">
+                                                    <td class="p-3"><span class="text-xl font-bold">${i+1}</span> ${medal}</td>
+                                                    <td class="p-3 font-semibold text-lg">${p.name}</td>
+                                                    <td class="p-3 text-center font-mono text-yellow-400 font-bold text-lg">${p.time}</td>
+                                                    <td class="p-3 text-center text-slate-400">${gap}</td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            `}
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                return html;
+            },
+            
+            renderRounds() {
+                const dis = this.isAdmin ? '' : 'disabled';
+                let html = '<div class="space-y-6">';
+                for (let r = 1; r <= 12; r++) {
+                    const scores = this.calculateRound(r);
+                    const arr = Object.values(scores).filter(s => s.pts > 0);
+                    arr.sort((a, b) => {
+                        if (b.pts !== a.pts) return b.pts - a.pts;
+                        if (b.laps !== a.laps) return b.laps - a.laps;
+                        return a.time - b.time;
+                    });
+                    
+                    html += `
+                        <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold">📅 ${this.getRoundName(r)}</h3>
+                                <button onclick="app.setRoundName(${r})" class="bg-blue-600 px-3 py-1 rounded text-sm hover:bg-blue-700 transition" ${dis}>✏️ Renommer</button>
+                            </div>
+                            ${arr.length === 0 ? '<p class="text-center text-slate-400">Aucun résultat</p>' : `
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="border-b border-slate-600">
+                                            <th class="text-left p-3">Pos</th>
+                                            <th class="text-left p-3">Pilote</th>
+                                            <th class="text-center p-3">2 meilleures finales</th>
+                                            <th class="text-center p-3">Points</th>
+                                            <th class="text-center p-3">Tours</th>
+                                            <th class="text-center p-3">Temps</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${arr.map((p, i) => `
+                                            <tr class="border-b border-slate-700">
+                                                <td class="p-3 font-bold">${i+1}</td>
+                                                <td class="p-3 font-semibold">${p.name}</td>
+                                                <td class="p-3 text-center">${p.best2.join(', ')}</td>
+                                                <td class="p-3 text-center text-yellow-400 font-bold">${p.pts}</td>
+                                                <td class="p-3 text-center">${p.laps}</td>
+                                                <td class="p-3 text-center">${this.formatTime(p.time)}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            `}
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                return html;
+            },
+            
+            renderEvolution() {
+                setTimeout(() => {
+                    const canvas = document.getElementById('chart');
+                    if (!canvas || this.pilots.length === 0) return;
+                    
+                    const datasets = this.pilots.map((p, i) => {
+                        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+                        const data = [];
+                        for (let r = 1; r <= 12; r++) {
+                            const champ = this.calculateChampionship(r);
+                            const idx = champ.findIndex(x => x.name === p.name);
+                            data.push(idx >= 0 ? idx + 1 : null);
+                        }
+                        return {
+                            label: p.name,
+                            data: data,
+                            borderColor: colors[i % colors.length],
+                            backgroundColor: colors[i % colors.length],
+                            tension: 0.4,
+                            pointRadius: 4
+                        };
+                    });
+                    
+                    new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: [...Array(12)].map((_, i) => this.getRoundName(i + 1)),
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                title: {
+                                    display: true, 
+                                    text: 'Évolution du classement général après chaque manche', 
+                                    color: '#1e293b', 
+                                    font: {size: 16, weight: 'bold'}
+                                },
+                                legend: {
+                                    position: 'top',
+                                    labels: {color: '#1e293b', font: {size: 12}}
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    reverse: true, 
+                                    min: 1, 
+                                    ticks: {stepSize: 1, color: '#1e293b'},
+                                    title: {display: true, text: 'Position', color: '#1e293b'}
+                                },
+                                x: {
+                                    ticks: {color: '#1e293b', maxRotation: 45, minRotation: 45}
+                                }
+                            }
+                        }
+                    });
+                }, 100);
+                
+                return `
+                    <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                        <h2 class="text-2xl font-bold mb-6">📈 Évolution du Classement</h2>
+                        ${this.pilots.length === 0 ? '<p class="text-center text-slate-400">Ajoutez des pilotes et des résultats</p>' : `
+                        <div class="bg-white rounded p-4">
+                            <canvas id="chart"></canvas>
+                        </div>
+                        <p class="mt-4 text-sm text-slate-300">💡 Ce graphique montre la position après chaque manche</p>
+                        `}
+                    </div>
+                `;
+            },
+            
+            renderChampionship() {
+                const champ = this.calculateChampionship().filter(p => p.pts > 0);
+                const medals = ['🥇', '🥈', '🥉'];
+                
+                return `
+                    <div class="bg-slate-800/50 rounded-lg p-6 border border-blue-500/30">
+                        <h2 class="text-2xl font-bold mb-6">🏆 Classement Général du Championnat</h2>
+                        ${champ.length === 0 ? '<p class="text-center text-slate-400 py-8">Aucun résultat</p>' : `
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead>
+                                    <tr class="border-b border-slate-600">
+                                        <th class="text-left p-3">Position</th>
+                                        <th class="text-left p-3">Pilote</th>
+                                        <th class="text-center p-3">10 meilleures manches</th>
+                                        <th class="text-center p-3">Points Totaux</th>
+                                        <th class="text-center p-3">Tours Totaux</th>
+                                        <th class="text-center p-3">Temps Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${champ.map((p, i) => `
+                                        <tr class="border-b border-slate-700 ${i < 3 ? 'bg-yellow-500/10' : ''}">
+                                            <td class="p-3">
+                                                <span class="text-2xl font-bold">${i+1}</span>
+                                                ${medals[i] ? `<span class="text-2xl ml-2">${medals[i]}</span>` : ''}
+                                            </td>
+                                            <td class="p-3 font-bold text-lg">${p.name}</td>
+                                            <td class="p-3 text-center text-sm">${p.best10.join(', ') || '-'}</td>
+                                            <td class="p-3 text-center text-yellow-400 font-bold text-xl">${p.pts}</td>
+                                            <td class="p-3 text-center font-semibold">${p.laps}</td>
+                                            <td class="p-3 text-center">${this.formatTime(p.time)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-6 text-sm text-slate-300 space-y-1">
+                            <p>📊 Les 10 meilleures manches sont retenues</p>
+                            <p>🏁 Départage : points → tours → temps</p>
+                        </div>
+                        `}
+                    </div>
+                `;
+            }
+        };
+        
+        window.app = app;
+    </script>
+</body>
+</html>
