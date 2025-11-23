@@ -463,7 +463,7 @@
                                         <th class="text-center p-3">Position</th>
                                         <th class="text-center p-3">Tours</th>
                                         <th class="text-center p-3">Temps<br><span class="text-xs font-normal">(mm:ss.00)</span></th>
-                                        <th class="text-center p-3">⚡ Best Lap<br><span class="text-xs font-normal">(mm:ss.000)</span></th>
+                                        <th class="text-center p-3">⚡ Best Lap<br><span class="text-xs font-normal">(secondes ex: 10.58)</span></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -488,7 +488,7 @@
                                                         class="w-32 px-2 py-1 bg-slate-700 rounded text-center border border-slate-600" ${dis}>
                                                 </td>
                                                 <td class="p-3">
-                                                    <input type="text" value="${bl[p.id] || ''}" placeholder="0:00.000"
+                                                    <input type="text" value="${bl[p.id] || ''}" placeholder="10.58"
                                                         onchange="app.updateBestLap(${this.currentRound}, ${p.id}, this.value)"
                                                         class="w-36 px-2 py-1 bg-yellow-900/30 rounded border border-yellow-600 text-center font-bold" ${dis}>
                                                 </td>
@@ -498,7 +498,7 @@
                                 </tbody>
                             </table>
                         </div>
-                        <p class="mt-4 text-sm text-slate-300">💡 Le Best Lap est unique par manche (toutes finales confondues)</p>
+                        <p class="mt-4 text-sm text-slate-300">💡 Le Best Lap est unique par manche (en secondes, ex: 10.58 pour 10s58)</p>
                         `}
                     </div>
                 `;
@@ -538,6 +538,29 @@
                 return html;
             },
             
+            parseBestLapTime(t) {
+                if (!t) return 999999;
+                
+                // Nettoyer la chaîne (enlever espaces)
+                const cleaned = String(t).trim();
+                
+                // Si c'est juste un nombre (ex: "10.58" ou "8.245")
+                const num = parseFloat(cleaned);
+                if (!isNaN(num) && num > 0) {
+                    return num;
+                }
+                
+                // Si c'est au format mm:ss.000
+                const parts = cleaned.split(':');
+                if (parts.length === 2) {
+                    const minutes = parseInt(parts[0]) || 0;
+                    const seconds = parseFloat(parts[1]) || 0;
+                    return minutes * 60 + seconds;
+                }
+                
+                return 999999;
+            },
+            
             renderBestLaps() {
                 let html = '<div class="space-y-6">';
                 for (let r = 1; r <= 12; r++) {
@@ -545,7 +568,7 @@
                     const data = this.pilots.map(p => ({
                         name: p.name,
                         time: bl[p.id] || '',
-                        val: this.parseTime(bl[p.id])
+                        val: this.parseBestLapTime(bl[p.id])
                     })).filter(p => p.time);
                     
                     data.sort((a, b) => a.val - b.val);
@@ -565,14 +588,18 @@
                                     </thead>
                                     <tbody>
                                         ${data.map((p, i) => {
-                                            const gap = i === 0 ? '-' : `+${(p.val - data[0].val).toFixed(3)}s`;
+                                            let gap = '-';
+                                            if (i > 0 && data[0].val < 999999 && p.val < 999999) {
+                                                const gapSeconds = p.val - data[0].val;
+                                                gap = `+${gapSeconds.toFixed(3)}s`;
+                                            }
                                             const medal = ['🥇', '🥈', '🥉'][i] || '';
                                             return `
                                                 <tr class="border-b border-slate-700 ${i < 3 ? 'bg-yellow-500/10' : ''}">
                                                     <td class="p-3"><span class="text-xl font-bold">${i+1}</span> ${medal}</td>
                                                     <td class="p-3 font-semibold text-lg">${p.name}</td>
                                                     <td class="p-3 text-center font-mono text-yellow-400 font-bold text-lg">${p.time}</td>
-                                                    <td class="p-3 text-center text-slate-400">${gap}</td>
+                                                    <td class="p-3 text-center text-slate-400 font-mono">${gap}</td>
                                                 </tr>
                                             `;
                                         }).join('')}
@@ -759,6 +786,9 @@
         };
         
         window.app = app;
+    </script>
+</body>
+</html>
     </script>
 </body>
 </html>
