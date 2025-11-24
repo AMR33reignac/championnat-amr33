@@ -207,6 +207,17 @@
                 }
             },
             
+            editPilot(id) {
+                const pilot = this.pilots.find(p => p.id === id);
+                if (!pilot) return;
+                
+                const newName = prompt('Nouveau nom du pilote:', pilot.name);
+                if (newName && newName.trim() && newName.trim() !== pilot.name) {
+                    pilot.name = newName.trim();
+                    this.saveToFirebase();
+                }
+            },
+            
             getRoundName(r) {
                 return this.roundNames[r] || `Manche ${r}`;
             },
@@ -415,7 +426,10 @@
                             ${this.pilots.map(p => `
                                 <div class="flex justify-between items-center bg-slate-700/50 p-3 rounded">
                                     <span class="font-semibold">${p.name}</span>
-                                    <button onclick="app.deletePilot(${p.id})" class="text-red-400 hover:text-red-300 transition" ${dis}>🗑️</button>
+                                    <div class="flex gap-2">
+                                        <button onclick="app.editPilot(${p.id})" class="text-blue-400 hover:text-blue-300 transition" ${dis} title="Modifier">✏️</button>
+                                        <button onclick="app.deletePilot(${p.id})" class="text-red-400 hover:text-red-300 transition" ${dis} title="Supprimer">🗑️</button>
+                                    </div>
                                 </div>
                             `).join('')}
                         </div>
@@ -467,7 +481,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${this.pilots.map(p => {
+                                    ${this.pilots.slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => {
                                         const pr = res[p.id] || {};
                                         return `
                                             <tr class="border-b border-slate-700">
@@ -786,9 +800,6 @@
         };
         
         window.app = app;
-    </script>
-</body>
-</html>
     </script>
 </body>
 </html>
