@@ -335,10 +335,25 @@
             },
             
             formatTime(s) {
-                if (s >= 999999) return '-';
+                if (s >= 999999 || s === 0) return '-';
                 const m = Math.floor(s / 60);
                 const sec = (s % 60).toFixed(2);
                 return `${m}:${sec.padStart(5, '0')}`;
+            },
+            
+            formatTotalTime(s) {
+                if (s >= 999999 || s === 0) return '-';
+                const hours = Math.floor(s / 3600);
+                const minutes = Math.floor((s % 3600) / 60);
+                const seconds = Math.floor(s % 60);
+                
+                if (hours > 0) {
+                    return `${hours}h ${minutes}m ${seconds}s`;
+                } else if (minutes > 0) {
+                    return `${minutes}m ${seconds}s`;
+                } else {
+                    return `${seconds}s`;
+                }
             },
             
             exportData() {
@@ -783,7 +798,7 @@
                                             <td class="p-3 text-center text-sm">${p.best10.join(', ') || '-'}</td>
                                             <td class="p-3 text-center text-yellow-400 font-bold text-xl">${p.pts}</td>
                                             <td class="p-3 text-center font-semibold">${p.laps}</td>
-                                            <td class="p-3 text-center">${this.formatTime(p.time)}</td>
+                                            <td class="p-3 text-center">${this.formatTotalTime(p.time)}</td>
                                         </tr>
                                     `).join('')}
                                 </tbody>
