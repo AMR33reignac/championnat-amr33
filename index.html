@@ -292,7 +292,12 @@
                         const pr = ranking.find(x => x.id === p.id);
                         if (pr) finals.push({f, pts: pr.points, laps: pr.laps, time: pr.timeVal});
                     }
-                    finals.sort((a, b) => b.pts - a.pts);
+                    // Trier par points DESC, puis tours DESC, puis temps ASC
+                    finals.sort((a, b) => {
+                        if (b.pts !== a.pts) return b.pts - a.pts;
+                        if (b.laps !== a.laps) return b.laps - a.laps;
+                        return a.time - b.time;
+                    });
                     const best2 = finals.slice(0, 2);
                     scores[p.id] = {
                         name: p.name,
