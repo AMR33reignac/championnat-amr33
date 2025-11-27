@@ -238,6 +238,13 @@
                 this.saveToFirebase();
             },
             
+            updateSeries(r, f, pilotId, value) {
+                const key = `${r}-${f}-series`;
+                if (!this.results[key]) this.results[key] = {};
+                this.results[key][pilotId] = value;
+                this.saveToFirebase();
+            },
+            
             updateBestLap(r, pilotId, value) {
                 if (!this.bestLaps[r]) this.bestLaps[r] = {};
                 this.bestLaps[r][pilotId] = value;
@@ -461,6 +468,8 @@
                 const dis = this.isAdmin ? '' : 'disabled';
                 const key = `${this.currentRound}-${this.currentFinal}`;
                 const res = this.results[key] || {};
+                const seriesKey = `${this.currentRound}-${this.currentFinal}-series`;
+                const series = this.results[seriesKey] || {};
                 const bl = this.bestLaps[this.currentRound] || {};
                 
                 return `
@@ -494,6 +503,7 @@
                                 <thead>
                                     <tr class="border-b border-slate-600">
                                         <th class="text-left p-3">Pilote</th>
+                                        <th class="text-center p-3">Série<br><span class="text-xs font-normal">(A, B, C...)</span></th>
                                         <th class="text-center p-3">Position</th>
                                         <th class="text-center p-3">Tours</th>
                                         <th class="text-center p-3">Temps<br><span class="text-xs font-normal">(mm:ss.00)</span></th>
@@ -503,9 +513,16 @@
                                 <tbody>
                                     ${this.pilots.slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => {
                                         const pr = res[p.id] || {};
+                                        const pilotSeries = series[p.id] || '';
                                         return `
                                             <tr class="border-b border-slate-700">
                                                 <td class="p-3 font-semibold">${p.name}</td>
+                                                <td class="p-3">
+                                                    <input type="text" value="${pilotSeries}" maxlength="1"
+                                                        onchange="app.updateSeries(${this.currentRound}, ${this.currentFinal}, ${p.id}, this.value.toUpperCase())"
+                                                        class="w-16 px-2 py-1 bg-blue-900/30 rounded text-center border border-blue-500 font-bold uppercase" ${dis}
+                                                        placeholder="A">
+                                                </td>
                                                 <td class="p-3">
                                                     <input type="number" value="${pr.position || ''}" 
                                                         onchange="app.updateResult(${this.currentRound}, ${this.currentFinal}, ${p.id}, 'position', this.value)"
